@@ -1,17 +1,9 @@
-import axios, { AxiosInstance } from 'axios';
+import apiClient from './apiClient'; // Import du client centralisé
 import { Patient } from '../types/patient';
 
 export class PatientService {
-    private client: AxiosInstance;
-
-    constructor() {
-        this.client = axios.create({
-            baseURL: '/api',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-    }
+    // Utilise le client partagé
+    private client = apiClient;
 
     async getPatients(): Promise<Patient[]> {
         const response = await this.client.get<Patient[]>('/patients');
