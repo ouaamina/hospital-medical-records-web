@@ -27,6 +27,10 @@ export default defineComponent({
             password: '',
         });
 
+        const handleInput = () => {
+            if (errorMessage.value) errorMessage.value = null;
+        };
+
         const handleSubmit = async (e: Event) => {
             e.preventDefault();
             if (!form.email || !form.password) {
@@ -39,14 +43,20 @@ export default defineComponent({
 
             try {
                 await props.onLogin({ ...form });
-                // Reset du formulaire en cas de succès
                 form.email = '';
                 form.password = '';
                 props.onClose();
-            } catch (err: unknown) {
-                errorMessage.value = err instanceof Error
-                    ? err.message
-                    : 'Identifiants incorrects ou erreur réseau.';
+            } catch (err: any) {
+                // Extraction du message d'erreur d'Axios / Restana
+                const backendError = err.response?.data?.error || err.response?.data?.message;
+
+                if (backendError) {
+                    errorMessage.value = backendError;
+                } else if (err.response?.status === 401) {
+                    errorMessage.value = 'Identifiants incorrects (email ou mot de passe invalide).';
+                } else {
+                    errorMessage.value = err.message || 'Erreur de connexion au serveur.';
+                }
             } finally {
                 isSubmitting.value = false;
             }
@@ -60,9 +70,7 @@ export default defineComponent({
                     <div style={styles.modalCard}>
                         {/* En-tête */}
                         <div style={styles.header}>
-                            <div style={styles.iconContainer}>
-                                🔒
-                            </div>
+                            <div style={styles.iconContainer}>🔒</div>
                             <h3 style={styles.title}>Connexion Sécurisée</h3>
                             <p style={styles.subtitle}>Accédez au système de gestion médicale</p>
                         </div>
@@ -83,7 +91,10 @@ export default defineComponent({
                                     required
                                     placeholder="medecin@hopital.fr"
                                     value={form.email}
-                                    onInput={(e: Event) => form.email = (e.target as HTMLInputElement).value}
+                                    onInput={(e: Event) => {
+                                        form.email = (e.target as HTMLInputElement).value;
+                                        handleInput();
+                                    }}
                                     style={styles.input}
                                 />
                             </div>
@@ -96,7 +107,10 @@ export default defineComponent({
                                         required
                                         placeholder="••••••••"
                                         value={form.password}
-                                        onInput={(e: Event) => form.password = (e.target as HTMLInputElement).value}
+                                        onInput={(e: Event) => {
+                                            form.password = (e.target as HTMLInputElement).value;
+                                            handleInput();
+                                        }}
                                         style={styles.input}
                                     />
                                     <button

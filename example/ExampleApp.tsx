@@ -1,4 +1,4 @@
-import { defineComponent, ref, computed, inject, onMounted } from 'vue';
+import { defineComponent, ref, computed, inject, onMounted, watch } from 'vue';
 import { PatientService } from '../src/api/patient.service';
 import { Patient } from '../src/types/patient';
 import PatientModal, { ModalMode } from '../src/components/PatientModal';
@@ -31,10 +31,17 @@ export default defineComponent({
         // 📄 ÉTATS ET LOGIQUE DE PAGINATION
         // -------------------------------------------------------------
         const currentPage = ref<number>(1);
-        const pageSize = ref<number>(5); // 5 patients par page
+        const pageSize = ref<number>(5);
 
         const totalPages = computed(() => {
             return Math.ceil(patients.value.length / pageSize.value) || 1;
+        });
+
+        // Ajuste automatiquement la page si la suppression d'un élément réduit le nombre total de pages
+        watch(totalPages, (newTotal) => {
+            if (currentPage.value > newTotal) {
+                currentPage.value = newTotal;
+            }
         });
 
         const paginatedPatients = computed(() => {
@@ -48,6 +55,16 @@ export default defineComponent({
                 currentPage.value = page;
             }
         };
+
+        // Indices de début et de fin pour le label de pagination
+        const pageStartIndex = computed(() => {
+            if (patients.value.length === 0) return 0;
+            return (currentPage.value - 1) * pageSize.value + 1;
+        });
+
+        const pageEndIndex = computed(() => {
+            return Math.min(currentPage.value * pageSize.value, patients.value.length);
+        });
         // -------------------------------------------------------------
 
         // Vérification de la session au chargement
@@ -65,9 +82,16 @@ export default defineComponent({
         };
 
         const handleLogin = async (credentials: LoginCredentials) => {
-            const authData = await authService.login(credentials);
-            currentUser.value = authData.user;
-            await loadPatients();
+            try {
+                const authData = await authService.login(credentials);
+                currentUser.value = authData.user;
+                isLoginModalOpen.value = false;
+                await loadPatients();
+            } catch (err) {
+                console.error("Erreur d'authentification :", err);
+                // CRUCIAL : On ré-émet l'erreur pour que LoginModal la reçoive
+                throw err;
+            }
         };
 
         const handleLogout = () => {
@@ -79,9 +103,9 @@ export default defineComponent({
         const loadPatients = async (): Promise<void> => {
             if (!patientService) return;
             loading.value = true;
+            error.value = null;
             try {
                 patients.value = await patientService.getPatients();
-                currentPage.value = 1; // Revenir à la première page
             } catch (err: unknown) {
                 error.value = err instanceof Error ? err.message : 'Erreur lors du chargement';
             } finally {
@@ -113,11 +137,11 @@ export default defineComponent({
             try {
                 if (id) {
                     await patientService.updatePatient(id, patientData);
-                    await loadPatients();
                 } else {
-                    const created = await patientService.createPatient(patientData);
-                    patients.value.push(created);
+                    await patientService.createPatient(patientData);
                 }
+                await loadPatients();
+                isModalOpen.value = false;
             } catch (err) {
                 console.error("Erreur lors de la sauvegarde :", err);
             }
@@ -154,7 +178,7 @@ export default defineComponent({
             <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: '40px 20px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
                 <div style={{ maxWidth: '960px', margin: '0 auto' }}>
 
-                    {/* Header avec zone Utilisateur / Connexion */}
+                    {/* Header */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                         <div>
                             <h1 style={{ margin: 0, fontSize: '24px', color: '#0f172a' }}>🏥 Gestion des Dossiers Médicaux</h1>
@@ -208,7 +232,7 @@ export default defineComponent({
                         </div>
                     </div>
 
-                    {/* Contenu principal / Table */}
+                    {/* Table */}
                     <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
                         {!currentUser.value ? (
                             <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
@@ -258,31 +282,9 @@ export default defineComponent({
                                                 </td>
                                                 <td style={{ ...tableTdStyle, color: '#64748b' }}>{patient.admissionDate}</td>
                                                 <td style={{ ...tableTdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-
-                                                    <button
-                                                        onClick={() => handleOpenViewModal(patient)}
-                                                        style={viewBtnStyle}
-                                                        title="Voir Détails"
-                                                    >
-                                                        Voir
-                                                    </button>
-
-                                                    <button
-                                                        onClick={() => handleOpenEditModal(patient)}
-                                                        style={{ ...editBtnStyle, marginLeft: '6px' }}
-                                                        title="Modifier"
-                                                    >
-                                                        Modifier
-                                                    </button>
-
-                                                    <button
-                                                        onClick={() => handleDeletePatient(patient)}
-                                                        style={{ ...deleteBtnStyle, marginLeft: '6px' }}
-                                                        title="Supprimer"
-                                                    >
-                                                        Supprimer
-                                                    </button>
-
+                                                    <button onClick={() => handleOpenViewModal(patient)} style={viewBtnStyle} title="Voir Détails">Voir</button>
+                                                    <button onClick={() => handleOpenEditModal(patient)} style={{ ...editBtnStyle, marginLeft: '6px' }} title="Modifier">Modifier</button>
+                                                    <button onClick={() => handleDeletePatient(patient)} style={{ ...deleteBtnStyle, marginLeft: '6px' }} title="Supprimer">Supprimer</button>
                                                 </td>
                                             </tr>
                                         );
@@ -301,7 +303,7 @@ export default defineComponent({
                                     color: '#64748b',
                                 }}>
                                     <div>
-                                        Affichage de {((currentPage.value - 1) * pageSize.value) + 1} à {Math.min(currentPage.value * pageSize.value, patients.value.length)} sur {patients.value.length} patients
+                                        Affichage de {pageStartIndex.value} à {pageEndIndex.value} sur {patients.value.length} patients
                                     </div>
 
                                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
